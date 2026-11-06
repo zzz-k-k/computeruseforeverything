@@ -1,0 +1,3 @@
+#!/bin/sh
+bin_dir=$(CDPATH= cd -- "${0%/*}" && pwd) || exit 1
+exec "$bin_dir/node" "$bin_dir/computer-use.mjs" "$@"

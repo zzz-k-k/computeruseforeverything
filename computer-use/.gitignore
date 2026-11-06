@@ -1,0 +1,7 @@
+node_modules/
+.state/
+bin/node
+bin/desktop-bridge
+bin/ffmpeg
+bin/ffprobe
+artifacts/
