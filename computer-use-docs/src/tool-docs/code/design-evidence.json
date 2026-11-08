@@ -1,0 +1,67 @@
+{
+  "captureArgs": {
+    "file": "capture.js",
+    "line": 249,
+    "code": "args.push('-an', '-sn');\n\n  const filters = [];\n  if (isDda(source, engine, platform)) filters.push('hwdownload', 'format=bgra');\n  // avfoundation 没有 gdigrab 那种 `-video_size` 局部抓取，裁剪只能在滤镜里做。\n  // 坐标按**采集分辨率**算（Retina 上是逻辑分辨率的 2 倍），不做自动换算。\n  if (source?.kind === 'screen' && (platform === 'darwin' || engineUsed === 'avfoundation') && source?.region) {\n    const r = source.region;\n    filters.push(`crop=${r.w}:${r.h}:${r.x}:${r.y}`);\n  }\n  filters.push(`scale=${width}:${height}:flags=${sws}`);\n  args.push('-vf', filters.join(','));\n\n  if (source?.kind !== 'screen' || (platform === 'darwin' || engineUsed === 'avfoundation')) {\n    args.push('-r', String(fps));\n  }\n  args.push('-f', 'rawvideo', '-pix_fmt', 'rgb24', '-');\n  return args;\n}"
+  },
+  "assemble": {
+    "file": "capture.js",
+    "line": 302,
+    "code": "child.stdout.on('data', (chunk) => {\n  let off = 0;\n  while (off < chunk.length) {\n    // `filled` 填满就立刻交付并清零，所以这里 room 永远 > 0\n    const room = need - filled;\n    const take = chunk.length - off < room ? chunk.length - off : room;\n    if (filled === 0 && take === need) {\n      // 整帧刚好落在一个 chunk 里：零拷贝，直接给视图\n      deliver(chunk.subarray(off, off + need));\n      off += need;\n      continue;\n    }\n    if (filled === 0) acc = Buffer.allocUnsafe(need);\n    chunk.copy(acc, filled, off, off + take);\n    filled += take;\n    off += take;\n    if (filled === need) { deliver(acc); acc = null; filled = 0; }\n  }\n});"
+  },
+  "grid": {
+    "file": "cuts.js",
+    "line": 13,
+    "code": "export function gridRgb(rgb, width, height, out) {\n  const sx = width / SCAN_W;\n  const sy = height / SCAN_H;\n  for (let gy = 0; gy < SCAN_H; gy += 1) {\n    const y0 = ((gy + 0.25) * sy) | 0;\n    const y1 = ((gy + 0.75) * sy) | 0;\n    const r0 = y0 * width;\n    const r1 = y1 * width;\n    for (let gx = 0; gx < SCAN_W; gx += 1) {\n      const x0 = ((gx + 0.25) * sx) | 0;\n      const x1 = ((gx + 0.75) * sx) | 0;\n      const a = (r0 + x0) * 3;\n      const b = (r0 + x1) * 3;\n      const c = (r1 + x0) * 3;\n      const d = (r1 + x1) * 3;\n      const i = gy * SCAN_W + gx;\n      out[i * 3] = (rgb[a] + rgb[b] + rgb[c] + rgb[d]) * 0.25;\n      out[i * 3 + 1] = (rgb[a + 1] + rgb[b + 1] + rgb[c + 1] + rgb[d + 1]) * 0.25;\n      out[i * 3 + 2] = (rgb[a + 2] + rgb[b + 2] + rgb[c + 2] + rgb[d + 2]) * 0.25;\n    }\n  }\n  return out;\n}"
+  },
+  "hsv": {
+    "file": "cuts.js",
+    "line": 38,
+    "code": "export function rgbToHsv(rgb, out) {\n  for (let i = 0, j = 0; i < rgb.length; i += 3, j += 3) {\n    const rn = rgb[i] / 255;\n    const gn = rgb[i + 1] / 255;\n    const bn = rgb[i + 2] / 255;\n    const max = rn > gn ? (rn > bn ? rn : bn) : (gn > bn ? gn : bn);\n    const min = rn < gn ? (rn < bn ? rn : bn) : (gn < bn ? gn : bn);\n    const d = max - min;\n    let h = 0;\n    if (d !== 0) {\n      if (max === rn) h = ((gn - bn) / d) % 6;\n      else if (max === gn) h = (bn - rn) / d + 2;\n      else h = (rn - gn) / d + 4;\n      h *= 60;\n      if (h < 0) h += 360;\n    }\n    out[j] = (h / 360) * 255;\n    out[j + 1] = max === 0 ? 0 : (d / max) * 255;\n    out[j + 2] = max * 255;\n  }\n  return out;\n}"
+  },
+  "score": {
+    "file": "cuts.js",
+    "line": 69,
+    "code": "export function scorePair(prev, cur) {\n  let sum = 0;\n  for (let i = 0; i < cur.length; i += 3) {\n    const dh = Math.abs(cur[i] - prev[i]);\n    const hueDiff = Math.min(dh, 255 - dh);\n    const hueWeight = Math.min(cur[i + 1], prev[i + 1]) / 255;\n    sum += hueDiff * hueWeight\n      + Math.abs(cur[i + 1] - prev[i + 1])\n      + Math.abs(cur[i + 2] - prev[i + 2]);\n  }\n  return sum / ((cur.length / 3) * 3);\n}\n"
+  },
+  "spike": {
+    "file": "pipeline.js",
+    "line": 787,
+    "code": "const px = entry.prev ?? 0;\nconst nx = nextScore ?? 0;\nconst base = Math.max(1, px, nx);\nconst mcOkForSpike = o.cutMcAbs <= 0 || o.cutSpikeMcAbs <= 0\n  || (entry.mc ?? 0) >= o.cutSpikeMcAbs;\nconst spike = nextScore === null\n  || (s > o.cutSpike * base && s >= o.cutSpikeAbs && mcOkForSpike);\n// 运动中的切机位：前后都在动时 spike 的 2.5 倍凑不出来，改用“台阶”\nconst jump = s - base;\nconst step = o.cutJumpAbs > 0\n  && s >= o.cutAbs\n  && s >= o.cutJumpAbs\n  && jump >= o.cutJumpMargin\n  && s >= o.cutJumpRatio * base;"
+  },
+  "cut": {
+    "file": "pipeline.js",
+    "line": 862,
+    "code": "if (entry.t - lastCut >= o.cutMinGap\n  && !fgMotion\n  && !futureFg\n  && (mcCut || (s >= o.cutAbs && (spike || step)) || isolated)) {\n  lastCut = entry.t;\n  acc = 0;                      // 切点之后重新攒（那一帧的分属于跨刀，不算运动）\n  keep(entry, 'cut');\n  return;\n}"
+  },
+  "dedup": {
+    "file": "pipeline.js",
+    "line": 438,
+    "code": "let dup = null;\nif (lastKeptHsv && entry.hsv) dup = scorePair(lastKeptHsv, entry.hsv);\nif (dup !== null && dup < o.dupMin && via !== 'cut' && via !== 'floor') {\n  stats.dupSkipped += 1;\n  return false;\n}\ntiers.mark(entry.t);\nconst lv = tiers.levelAt();"
+  },
+  "integral": {
+    "file": "pipeline.js",
+    "line": 872,
+    "code": "acc += s;\nif (acc >= integralNeed() && entry.t - lastBound >= o.markMinGap) {\n  // 只有**真的录进去**才清零。被去重挡掉时保留累积值 —— 否则这一段的运动量\n  // 白攒了，下一个采样点要重新等一整轮（实测会让出帧间隔凭空翻倍）。\n  if (keep(entry, 'mark')) acc = 0;\n  return;\n}\nlet floorSec = o.silentFloorSec;\nif (o.floorGapK > 0 && gapEwma > 0) {\n  floorSec = Math.min(o.floorMax, Math.max(o.floorMin, o.floorGapK * gapEwma));\n}\nif (entry.t - lastBound >= floorSec) keep(entry, 'floor');"
+  },
+  "pack": {
+    "file": "pipeline.js",
+    "line": 661,
+    "code": "if (regionAspect) return flushRegion(batch, t, why);\nconst seq = seqOf(batch);\nconst p = solve(seq, { binCost: o.binCost });\nif (!p.cells.length) return;\n/**\n * **一张图只画一个箱子**。`solve` 允许跨箱（DP 里封箱是要付 `binCost` 的），\n * 而 `cells` 会带上所有箱的格子、只靠 `bin` 字段区分 —— 不过滤就画，\n * 第二箱的 y 从 0 重新开始，直接盖在第一箱上。\n *\n * 正常情况下调用方已经保证单箱（`checkFlush` / `finish` 都先切过），\n * 这里是最后一道闸：宁可少画几帧，也不能交一张糊在一起的图。\n */\nconst kept = p.cells.filter((c) => c.bin === 0);\nconst used = batch.slice(0, kept.length);\nif (used.length < batch.length) stats.overflow += 1;\nconst rects = toRects(kept, { width, height, gutter: 0 });"
+  },
+  "compose": {
+    "file": "pipeline.js",
+    "line": 684,
+    "code": "const cells = used.map((f) => ({ src: f.buf, sw: width, sh: height }));\nconst stripH = stripHeightFor();\nconst img = composePacked({\n  frames: cells, rects, width, height, burn: 'index', stripH,\n});\n// 音轨条：响度 + 切点刻度。**画布已经预留好高度**，这里是就地填底部，\n// 不再额外分配 + 拷贝一整张图（省 1.1MB/张）。\nif (stripH) drawAudioStrip(img.buffer, img.width, img.height, height, audioOf(used[0], used[used.length - 1]));\nconst png = encodePng(img.buffer, img.width, img.height, { level: 3 });"
+  },
+  "take": {
+    "file": "runner.js",
+    "line": 298,
+    "code": "function takeSheets(by) {\n  const out = [];\n  if (reserved) {\n    const r = reserved;\n    reserved = null;\n    // 过期就**当它不存在**：模型没来取，这张已经旧了，交给队列里更新的那张\n    if (Date.now() - r.at <= reserveSec * 1000) {\n      out.push(r.sheet);\n      takes.reserved += 1;\n    }\n  }\n  const batch = Math.max(1, Math.trunc(wakeBatch) || 1);\n  while (out.length < batch) {\n    const s = pipeline?.take?.() ?? null;\n    if (!s) break;\n    out.push(s);\n  }\n  if (by) {\n    takes[by] += 1;\n    if (!out.length) takes[`${by}Empty`] += 1;\n  }\n  return out;\n}"
+  },
+  "timeout": {
+    "file": "runner.js",
+    "line": 867,
+    "code": "// 到点了：手上攒的半张也算数（用户已经在等），但不够 minFrames 就不给\nconst last = flushNow(null, 'timeout');\nif (last && last.frames.length >= minFrames) {\n  return { ok: true, sheets: [attachLines(last)], waited: (Date.now() - t0) / 1000, partial: true, quality };\n}\nreturn {\n  ok: false,\n  reason: signal?.aborted ? 'cancelled' : (frames ? 'no-change' : 'capture-stopped'),\n  waited: (Date.now() - t0) / 1000,\n  error: lastError,\n};"
+  }
+}

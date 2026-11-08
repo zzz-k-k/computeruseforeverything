@@ -1,0 +1,17 @@
+const p=s=>`<p>${s}</p>`;
+const code=(label,value)=>({code:[label,value]});
+export const deploymentPage={title:'安装与部署',path:'guide/deployment',icon:'terminal',description:'从源码准备本机运行环境；静态文档可独立发布到 GitHub Pages。',sections:[
+ ['requirements','运行要求',p('macOS 14+，当前以 Apple Silicon 为主要验收平台；Node 24+、npm、Xcode Command Line Tools、FFmpeg/FFprobe。Chrome 模块需 Chrome 125+。源码不附带本机二进制或 node_modules，克隆后不能跳过构建。')],
+ ['install','从源码构建',p('用 GitHub Desktop 克隆仓库，在仓库根目录打开终端。已有 Homebrew 时执行下列命令；缺少开发工具先运行 xcode-select --install，完成系统安装。'),code('Shell · 新安装','brew install node@24 ffmpeg\nNODE_BIN="$(brew --prefix node@24)/bin"\nenv PATH="$NODE_BIN:$PATH" npm ci --prefix computer-use\nenv PATH="$NODE_BIN:$PATH" npm run build --prefix computer-use\nln -s "$(brew --prefix ffmpeg)/bin/ffmpeg" computer-use/bin/ffmpeg\nln -s "$(brew --prefix ffmpeg)/bin/ffprobe" computer-use/bin/ffprobe\n./computer-use/bin/node computer-use/scripts/check-local.mjs'),p('以上 PATH 仅影响对应命令，不修改 shell 配置。已有 bin/ffmpeg 或 ffprobe 时先确认来源，不覆盖现用文件。Homebrew 库和符号链接依赖本机环境，不是离线可移动发行包。build 只复制当前 Node 并编译 Swift，不下载媒体工具。')],
+ ['start','启动与权限',code('Shell · 本机服务','./computer-use/bin/computer-use-server --listen 127.0.0.1:8766\n# 在另一个终端\n./computer-use/bin/computer-use health --json\n./computer-use/bin/computer-use list --json'),p('CLI 默认可自动启动服务；令牌保存在 computer-use/.state/token，不要公开。桌面截图/输入按系统提示授予屏幕录制和辅助功能权限。权限检查不会自动授权。浏览器扩展走独立的 debugger 权限。'),{links:[['browser','安装 Chrome 扩展'],['mcp','连接 AI'],['permissions','权限边界']]}],
+ ['update','更新与停止',p('更新前结束当前观察与控制，停止旧服务，再安装依赖和构建。手动服务按 Ctrl+C 停止；自动服务的 PID 文件可能过期，先核实进程身份。修改源码不会热重载运行服务。Chrome 扩展代码更新后手动重新加载；项目移动后重新注册 Native Messaging 宿主。')],
+ ['docs','本地文档与在线文档',code('Shell · 仅构建文档','node computer-use-docs/src/build.mjs\npython3 -m http.server 8765 --bind 127.0.0.1 --directory computer-use-docs/dist'),p('构建文档仅需 Node 24+，不要求 npm install 或 macOS。浏览 http://127.0.0.1:8765/。GitHub Pages 工作流仅上传静态 dist，不部署控制服务。'),{links:[['publishing','GitHub Desktop 与 Pages 发布']]}],
+ ['troubleshooting','常见问题',{table:[['现象','处理'],['找不到 bin/node','先用开发环境 Node/npm 安装依赖并运行 build。'],['FFmpeg 缺失','检查默认 bin 链接或手动服务的 --ffmpeg / --ffprobe 路径。'],['connected:false','检查扩展 ID、宿主注册绝对路径、旧版服务与扩展管理页错误。'],['端口或 Socket 已占用','先核实旧进程身份，不终止无关程序或删除活动 Socket。'],['自定义状态目录不连通','Chrome 宿主默认使用默认服务地址和状态目录；不会继承手动服务命令行参数。']]}],
+]};
+export const publishingPage={title:'发布项目与文档',path:'guide/publishing',icon:'external',description:'用 GitHub Desktop 发布源码，再手动运行 GitHub Pages 工作流。',sections:[
+ ['repository','发布源码',p('本说明按 zzz-k-k/computeruseforeverything 编写。在 GitHub Desktop 检查 Changes、提交，然后 Publish repository；确认公开范围后发布。本页面不代表仓库已经上线。若采用其他仓库名，更新 README 和运行说明中的预期链接。')],
+ ['files','公开范围',p('忽略规则排除 .state、令牌、运行截图、node_modules、本机二进制和生成的 dist。但已经跟踪的文件与历史不会被 .gitignore 移除。发布前检查既有截图及调查记录；若不希望公开旧历史，可将选定源码复制到不含 .git 的新目录并创建新仓库，保留原项目。自有代码许可证尚未选定，第三方 LICENSE/NOTICE 必须保留。')],
+ ['pages','启用 Pages',p('发布源码后，在仓库 Settings → Pages 将 Source 设为 GitHub Actions。进入 Actions → Publish documentation → Run workflow，选择默认分支。构建只需要 Node，上传目录为 computer-use-docs/dist。工作流为手动触发，推送源码不会自动发布网页。'),code('预期文档网址','https://zzz-k-k.github.io/computeruseforeverything/'),p('最终以部署成功后 GitHub 显示的网址为准。Pages 是静态文档托管，macOS 控制服务继续部署在用户本机。')],
+ ['about','右侧 About 网址',p('回到 GitHub 仓库首页，点击右侧 About 的齿轮，将已部署的网址填入 Website 并保存。该设置不会随 README 提交自动更新。'),code('Description 建议','Local computer-use tools for AI via CLI, HTTP and MCP, with Chrome background control and video observation.')],
+ ['verify','发布后验证',p('打开首页、深层工具页、搜索、暗色模式与移动端导航。出现 404 时先查工作流是否成功、Pages Source 和实际仓库名。完整的 GitHub Desktop 操作和当前仓库历史检查项见源码 docs/PUBLISHING.md。')],
+]};

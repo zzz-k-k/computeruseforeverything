@@ -1,0 +1,21 @@
+const p=s=>`<p>${s}</p>`;
+const code=(label,text)=>({code:[label,text]});
+const target={kind:'browser',connection_id:'替换为 browser_status 返回的连接 ID',tab_id:42};
+const specs={
+ browser_status:['查询扩展连接','{}','读取本地 Broker 中已握手的扩展连接。返回 connection_id、协议版本和标签租约；connected:false 表示未连接，不能据此声明 Chrome 已可控制。'],
+ browser_tabs:['列出标签','{"connection_id":"连接 ID"}','通过 Native Messaging 将请求发到扩展，调用 chrome.tabs.query，返回 tab_id、window_id、URL、标题和活动状态。'],
+ browser_open:['后台创建标签','{"connection_id":"连接 ID","url":"https://example.com"}','校验 HTTP/HTTPS URL，调用 chrome.tabs.create({active:false})。返回新标签 ID；随后显式 browser_attach 获取控制权。不会发送 Cmd+T。'],
+ browser_attach:['附加控制',JSON.stringify({target},null,2),'本地按标签串行检查会话归属，再调用 chrome.debugger.attach 和 Emulation.setFocusEmulationEnabled。焦点模拟失败会解除附加并报错，不回退到原生输入。'],
+ browser_navigate:['导航页面',JSON.stringify({target,url:'https://example.com'},null,2),'调用 Page.navigate；返回 load_state:dispatched 表示导航已发出，不表示网页加载完成。用 browser_state 继续观察 URL、标题和元素。页面导航会增加 epoch，使旧截图失效。'],
+ browser_state:['读取页面状态',JSON.stringify({target},null,2),'读取标签信息、Page.getLayoutMetrics 和 Accessibility.getFullAXTree，最多返回 1000 个 AX 节点。当前节点只用于观察，不接受元素路径点击；跨进程 iframe 的独立 AX 树尚未聚合。'],
+ browser_detach:['释放控制',JSON.stringify({target},null,2),'解除调试器附加并释放本地会话租约，保留标签页。用户手动取消调试时同样撤销租约，后续输入要求重新附加。'],
+ browser_close:['关闭标签',JSON.stringify({target},null,2),'要求当前会话已持有标签租约，调用 chrome.tabs.remove 并清理状态。只关闭明确指定的标签。'],
+};
+export const browserToolPages=Object.fromEntries(Object.entries(specs).map(([name,[description,args,logic]])=>[name,{title:name,path:'tools/'+name.replaceAll('_','-'),icon:'layers',description,sections:[['implementation','实现步骤',p(logic)],['example','参数与调用',code('JSON · arguments',args),p('CLI 使用 computer-use '+name.replaceAll('_','-')+' --args \'JSON参数\' --json；HTTP 与 MCP 使用相同工具名和参数。')],['boundary','边界',p('所有连接均在本机。连接 ID 会在重连后变化；会话 ID 必须在多次 CLI/MCP/HTTP 调用之间一致。'),{links:[['browser','Chrome 扩展与后台操作']]}]]}]));
+export const browserPage={title:'Chrome 扩展',path:'guide/browser',icon:'layers',description:'本地 Native Messaging 桥接和 CDP 页面操作。真实 Chrome 验收状态独立记录。',sections:[
+ ['architecture','调用链',code('本机架构','CLI / MCP / HTTP → Runtime → browserCall → Broker\n→ Unix Socket → Native Messaging Host → Chrome 扩展\n→ chrome.debugger → 标签页'),p('src/browser/broker.mjs 管理连接、请求关联、标签租约与队列；src/tools/browser.mjs 管理页面帧和输入路由。src/native/chrome-host.mjs 转换 stdio 长度前缀消息与 Socket JSON 行消息。扩展 background.mjs 执行标签及 CDP 命令。扩展权限为 debugger、nativeMessaging、tabs、storage，无远端服务。')],
+ ['install','本机安装',p('在 chrome://extensions 开启开发者模式，加载 computer-use/extensions/chrome。取得扩展 ID 后运行安装脚本，生成当前用户 Chrome NativeMessagingHosts 注册文件，再重新加载扩展。注册使用绝对路径和指定扩展 ID，不修改 PATH。'),code('安装宿主','cd computer-use\n./bin/node scripts/install-chrome-host.mjs 扩展ID\n./bin/computer-use browser-status --json'),p('Chrome 不允许普通程序静默安装此开发扩展。安装脚本仅适用于 macOS Chrome；项目移动后重新注册。已有旧版服务需先安全重启以启用 chrome.sock。弹出面板显示连接和控制标签，可停止全部页面控制。')],
+ ['input','截图与操作',p('screenshot / click / type / press_key / scroll 传 kind:browser 的目标后走扩展，原生窗口参数保持兼容。截图通过 Page.captureScreenshot 返回 PNG；Runtime 从 PNG 读取尺寸、保存 epoch 和视口指标。点击前比较导航代次和视口/滚动/缩放，转换图片像素到 CSS 视口坐标。'),code('JSON · 浏览器截图',JSON.stringify({name:'screenshot',arguments:{target}},null,2)),code('核心派发','await chrome.debugger.sendCommand({tabId}, "Emulation.setFocusEmulationEnabled", {enabled:true});\nawait chrome.debugger.sendCommand({tabId}, "Input.insertText", {text});'),p('鼠标使用 Input.dispatchMouseEvent，键盘使用 Input.dispatchKeyEvent。press_key 支持 Enter、Tab、Escape、Backspace、Delete、方向键、Home/End、PageUp/PageDown；组合快捷键暂不支持。type 用于 Unicode 正文。禁止自动回退到系统鼠标或激活窗口。')],
+ ['reliability','并发、取消与断线',p('同一标签串行执行并归属于一个 session_id；不同标签可独立执行。当前租约通过 detach、close、调试器解除或连接断开释放，没有自动闲置过期。断线/取消/超时返回 browser_result_unknown，不自动重放输入。结果未知的标签需先观察、detach 再 attach。大响应分块传输，宿主限制总大小。'),p('页面动态内容可能在截图之后变化；几何校验不能保证动画中的目标不移动。工具返回 dispatched 不等于业务操作成功，须重新观察。')],
+ ['verification','验收状态与限制',p('新增自动测试覆盖标签归属、未附加拒绝、断线结果未知、不重放、错误目标阻断。2026-11-08 21:43（北京时间）重载扩展后再次完成真实 Chrome 验收；测试服务器延迟 750ms 响应，创建标签后立即附加，不等待页面加载：后台创建、中文输入、Enter、坐标点击、滚动、旧帧拒绝、导航、AX 读取、截图和关闭通过。只读焦点探针在约 3.76 秒内采样 695 次，前台与键盘焦点均保持聊天应用，未收到应用激活通知；最大采样间隔约 25.03ms。这是本机页面测试结果，不是任意网页零抢焦点保证。'),p('当前不支持浏览器工具栏、原生文件对话框、受限 chrome:// 页面、扩展页及浏览器 see_now 连续采样。跨源 iframe 可尝试视口坐标输入，但尚无独立子 frame 元素引用与验收。后台路径不主动聚焦窗口；网页弹窗和外部应用启动仍可能影响前台。')],
+]};

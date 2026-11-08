@@ -1,0 +1,52 @@
+{
+  "start": [
+    [
+      "runner.js L513–526",
+      "run = spawnFrames({\n  source: s,\n  width: p.constants.width,\n  height: p.constants.height,\n  fps: p.constants.fps,\n  ffmpegPath,\n  engine,\n  onFrame: (f) => {\n    frames += 1;\n    // 一帧解码就抛 = 整条管线停摆，这里必须兜住：宁可少一帧，不能让采集线程炸掉\n    try { p.push(f); } catch (e) { lastError = `push: ${e?.message ?? e}`; }\n  },\n  onStderr: (s2) => { if (process.env.DSH_SEE_NOW_DEBUG) log(s2.trim()); },\n});"
+    ]
+  ],
+  "watch": [
+    [
+      "cuts.js L69–80",
+      "export function scorePair(prev, cur) {\n  let sum = 0;\n  for (let i = 0; i < cur.length; i += 3) {\n    const dh = Math.abs(cur[i] - prev[i]);\n    const hueDiff = Math.min(dh, 255 - dh);\n    const hueWeight = Math.min(cur[i + 1], prev[i + 1]) / 255;\n    sum += hueDiff * hueWeight\n      + Math.abs(cur[i + 1] - prev[i + 1])\n      + Math.abs(cur[i + 2] - prev[i + 2]);\n  }\n  return sum / ((cur.length / 3) * 3);\n}"
+    ],
+    [
+      "pipeline.js L872–883",
+      "acc += s;\nif (acc >= integralNeed() && entry.t - lastBound >= o.markMinGap) {\n  // 只有**真的录进去**才清零。被去重挡掉时保留累积值 —— 否则这一段的运动量\n  // 白攒了，下一个采样点要重新等一整轮（实测会让出帧间隔凭空翻倍）。\n  if (keep(entry, 'mark')) acc = 0;\n  return;\n}\nlet floorSec = o.silentFloorSec;\nif (o.floorGapK > 0 && gapEwma > 0) {\n  floorSec = Math.min(o.floorMax, Math.max(o.floorMin, o.floorGapK * gapEwma));\n}\nif (entry.t - lastBound >= floorSec) keep(entry, 'floor');"
+    ],
+    [
+      "pipeline.js L684–692",
+      "const cells = used.map((f) => ({ src: f.buf, sw: width, sh: height }));\nconst stripH = stripHeightFor();\nconst img = composePacked({\n  frames: cells, rects, width, height, burn: 'index', stripH,\n});\n// 音轨条：响度 + 切点刻度。**画布已经预留好高度**，这里是就地填底部，\n// 不再额外分配 + 拷贝一整张图（省 1.1MB/张）。\nif (stripH) drawAudioStrip(img.buffer, img.width, img.height, height, audioOf(used[0], used[used.length - 1]));\nconst png = encodePng(img.buffer, img.width, img.height, { level: 3 });"
+    ]
+  ],
+  "peek": [
+    [
+      "runner.js L902–909",
+      "peek() {\n  // 超省模式下这里可能一次拿到多张 —— 和 `watch` 同一个口径，\n  // 否则\"攒了 3 张但 peek 只给 1 张\"等于白攒。\n  const queued = takeSheets('peek').map((s) => attachLines(s));\n  if (running) armGrace();\n  if (!windowState?.ok && !windowPending) void ensureWindow();\n  return queued;\n},"
+    ]
+  ],
+  "stop": [
+    [
+      "runner.js L410–420",
+      "function teardown(why) {\n  if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; }\n  run?.stop();\n  run = null;\n  running = false;\n  source = null;\n  stoppedAt = Date.now();\n  // 采集收工，声音也一起停：一个抓回环的进程常驻在后台，用户是看不见的\n  listener.stop('采集收工');\n  if (why) log(`收工：${why}`);\n}"
+    ]
+  ],
+  "status": [
+    [
+      "runner.js L941–953",
+      "running,\nsource,\nlastSource,\nhungUp,\nendedFile: endedSource?.path ?? null,\nquality,\nsize: SIZES[quality],\nframes,\nsince: startedAt ? Math.round((Date.now() - startedAt) / 1000) : 0,\nlastError,\nidleSec: stoppedAt ? Math.round((Date.now() - stoppedAt) / 1000) : 0,\nstats: pipeline?.stats ?? null,\npending: pipeline?.pending ?? 0,"
+    ]
+  ],
+  "window": [
+    [
+      "index.js L1006–1013",
+      "const wants = typeof args.show === 'boolean' ? args.show : null;\nlet changed = null;\nif (wants !== null) {\n  // `show` 和 `hidden` 方向相反，换算只在 hiddenForShow 一处\n  changed = setWindowHidden(hiddenForShow(wants), { log });\n  log(`悬浮窗${wants ? '显示' : '隐藏'}${changed.changed ? '' : '（本来就是）'}`);\n}\nconst r = windowReport();"
+    ]
+  ],
+  "region": [
+    [
+      "region.js L117–131",
+      "let region = null;\ntry { region = JSON.parse(line); } catch { /* 下面统一报 */ }\nconst valid = region && [region.x, region.y, region.w, region.h]\n  .every((v) => Number.isInteger(v)) && region.w > 0 && region.h > 0;\nif (!valid) {\n  finish({ result: { ok: false, reason: 'failed', detail: (err || line || `退出码 ${code}`).slice(0, 400) } });\n  return;\n}\n// 负坐标 = 框到主屏外面去了，gdigrab 不接受负 offset（见 pick_region.py 第 3 条）\nif (region.x < 0 || region.y < 0) {\n  finish({ result: { ok: false, reason: 'failed', detail: '框到主屏外面了（负坐标），请在主屏里框' } });\n  return;\n}\nsaveRegion(region, env);\nfinish({ result: { ok: true, region } });"
+    ]
+  ]
+}

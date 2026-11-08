@@ -1,0 +1,33 @@
+--- a/src/runner.js
++++ b/src/runner.js
+@@ -169,6 +169,7 @@
+ 
+ export function createRunner({
+   ffmpegPath = 'ffmpeg', log = () => {}, graceSec = 60, ctx = null,
++  enableWindow = true, enableAudio = true,
+   /** 「听声音」的延迟参数（`~/.dsh/see-now.json` 的 `listen` 段，见 tuning.js） */
+   listen = null,
+   /** `~/.dsh/see-now.json` 的 `changeLog`：交付时附「这期间屏幕怎么动的」摘要（默认关） */
+@@ -542,9 +543,11 @@
+      * 挡在前面会让"开始看"从 0.4 秒变成一个明显能感觉到的卡顿。
+      * 起不来只是没字幕 —— 记一条日志，看画面照旧。
+      */
+-    listener.start()
+-      .then((r) => { if (!r.ok) log(`听声音没开：${r.reason}`); })
+-      .catch((e) => log(`听声音没开：${e?.message ?? e}`));
++    if (enableAudio) {
++      listener.start()
++        .then((r) => { if (!r.ok) log(`听声音没开：${r.reason}`); })
++        .catch((e) => log(`听声音没开：${e?.message ?? e}`));
++    }
+     // macOS 没给屏幕录制权限时，采集本身是"成功"的，只是画面全黑 ——
+     // 探针已经试出来了，这里把它带回去，让模型（和用户）知道该去系统设置，而不是以为插件坏了。
+     const warning = s.kind === 'screen' ? screenEngineWarning() : null;
+@@ -562,6 +565,7 @@
+    * 不然会拿到一个"成功"但其实早就退了的窗（pid 指向死进程）。
+    */
+   async function ensureWindow() {
++    if (!enableWindow) return { ok: false, reason: 'disabled' };
+     if (windowState?.ok) return windowState;
+     if (windowPending) return windowPending;
+     windowPending = openWindow({ log }).then((st) => {
