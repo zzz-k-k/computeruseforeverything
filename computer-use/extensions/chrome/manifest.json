@@ -1,0 +1,1 @@
+{"manifest_version":3,"name":"Computer Use Local","version":"0.1.0","minimum_chrome_version":"125","description":"Local browser control through Native Messaging. No cloud service.","permissions":["debugger","nativeMessaging","tabs","storage"],"background":{"service_worker":"background.mjs","type":"module"},"action":{"default_popup":"popup.html"}}

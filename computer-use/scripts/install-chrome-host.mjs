@@ -1,0 +1,10 @@
+import {mkdir,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {homedir} from 'node:os';
+import {fileURLToPath} from 'node:url';
+const id=process.argv[2];if(!/^[a-p]{32}$/.test(id??''))throw Error('Usage: node scripts/install-chrome-host.mjs EXTENSION_ID');
+const directory=join(homedir(),'Library/Application Support/Google/Chrome/NativeMessagingHosts');
+await mkdir(directory,{recursive:true});
+const path=join(directory,'local.computeruse.chrome.json');
+await writeFile(path,JSON.stringify({name:'local.computeruse.chrome',description:'Computer Use Local browser bridge',path:fileURLToPath(new URL('../bin/computer-use-chrome-host',import.meta.url)),type:'stdio',allowed_origins:[`chrome-extension://${id}/`]},null,2),{mode:0o600});
+console.log(path);

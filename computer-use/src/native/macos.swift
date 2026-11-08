@@ -95,14 +95,14 @@ func postClick(_ point: CGPoint, right: Bool) throws {
     Thread.sleep(forTimeInterval: 0.02)
 }
 
-func postText(_ text: String) throws {
+func postText(_ text: String, source: CGEventSource? = nil, paced: Bool = true, delivery: (CGEvent) throws -> Void = { $0.post(tap: .cghidEventTap) }) throws {
     guard text.utf16.count <= 4096 else { throw BridgeError("invalid_text", "Text may contain at most 4096 UTF-16 code units.") }
     let clusters = text.map { Array(String($0).utf16) }
     guard clusters.allSatisfy({ $0.count <= 20 }) else { throw BridgeError("text_cluster_too_long", "A grapheme cluster exceeds the native event limit of 20 UTF-16 code units.") }
     try requireAccessibility()
     let events = try clusters.map { units -> (CGEvent, CGEvent) in
-        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
-              let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
             throw BridgeError("event_creation_failed", "Cannot create text event.")
         }
         units.withUnsafeBufferPointer { buffer in
@@ -113,14 +113,14 @@ func postText(_ text: String) throws {
         return (down, up)
     }
     for (down, up) in events {
-        down.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.01)
-        up.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.01)
+        try delivery(down)
+        if paced { Thread.sleep(forTimeInterval: 0.01) }
+        try delivery(up)
+        if paced { Thread.sleep(forTimeInterval: 0.01) }
     }
 }
 
-func postKey(_ key: String) throws {
+func postKey(_ key: String, source: CGEventSource? = nil, paced: Bool = true, delivery: (CGEvent) throws -> Void = { $0.post(tap: .cghidEventTap) }) throws {
     let keys: [String: Int] = [
         "enter": kVK_Return, "escape": kVK_Escape, "tab": kVK_Tab, "backspace": kVK_Delete,
         "delete": kVK_ForwardDelete, "space": kVK_Space,
@@ -142,15 +142,15 @@ func postKey(_ key: String) throws {
         flags.insert(flag)
     }
     try requireAccessibility()
-    guard let down = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(virtualKey), keyDown: true),
-          let up = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(virtualKey), keyDown: false) else {
+    guard let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(virtualKey), keyDown: true),
+          let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(virtualKey), keyDown: false) else {
         throw BridgeError("event_creation_failed", "Cannot create key event.")
     }
     down.flags = flags; up.flags = []
-    down.post(tap: .cghidEventTap)
-    Thread.sleep(forTimeInterval: 0.02)
-    up.post(tap: .cghidEventTap)
-    Thread.sleep(forTimeInterval: 0.02)
+    try delivery(down)
+    if paced { Thread.sleep(forTimeInterval: 0.02) }
+    try delivery(up)
+    if paced { Thread.sleep(forTimeInterval: 0.02) }
 }
 
 func postScroll(_ request: [String: Any]) throws {
@@ -182,6 +182,15 @@ func postScroll(_ request: [String: Any]) throws {
             var result: [String: Any] = ["status": "executed"]
             switch action {
             case "permissions": result = ["screenRecording": CGPreflightScreenCaptureAccess(), "accessibility": AXIsProcessTrusted()]
+            case "apps": result = listApps()
+            case "windows": result = ["windows": windowRows().map(windowJSON)]
+            case "window_info": result = try resolveWindow(request)
+            case "app_state":
+                let target = try resolveWindow(request)
+                result = ["target":target,"elements":elementRows(try axWindows(target)),"frontmost_pid":listApps()["frontmost_pid"]!]
+            case "window_stream": try await streamWindow(request)
+            case "window_capture": result = try await captureWindow(request)
+            case "target_action": result = try targetAction(request)
             case "layout": result = try displayLayout()
             case "capture":
                 guard let value = number(request, "displayId"), let id = UInt32(exactly: value) else { throw BridgeError("invalid_display", "Display ID must be an unsigned 32-bit integer.") }

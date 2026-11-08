@@ -7,8 +7,12 @@
     "node": ">=24"
   },
   "scripts": {
+    "check:local": "node scripts/check-local.mjs",
+    "acceptance": "node scripts/acceptance.mjs",
     "test": "node --test tests/*.test.mjs",
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "acceptance:browser": "node scripts/browser-acceptance.mjs",
+    "acceptance:browser-transports": "node scripts/browser-transport-check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

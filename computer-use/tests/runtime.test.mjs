@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-test('runtime exposes exactly seven tools and rejects invalid args before side effects', async () => {
+test('runtime exposes shared desktop and window tools and rejects invalid args before side effects', async () => {
  assert.ok(existsSync(new URL('../src/runtime.mjs',import.meta.url)), 'runtime must exist');
  const {createRuntime}=await import('../src/runtime.mjs');
  const r=await createRuntime();
  try {
-  assert.deepEqual(r.list().map(t=>t.name).sort(),['click','press_key','screenshot','scroll','see_now','type','video_frame']);
+  assert.deepEqual(r.list().map(t=>t.name).sort(),['browser_attach','browser_close','browser_detach','browser_navigate','browser_open','browser_state','browser_status','browser_tabs','capabilities','click','get_app_state','list_apps','list_windows','press_key','screenshot','scroll','see_now','set_value','type','video_frame']);
   for(const [name,args] of [['click',{frame_id:'missing',x:-1,y:0}],['scroll',{frame_id:'x',x:0,y:0,delta_y:1.5}],['type',{text:3}],['video_frame',{path:'/tmp/no.mp4'}],['see_now',{action:'bogus'}]]) {
    await assert.rejects(r.call(name,args,{sessionId:'test'}),e=>e.code==='invalid_arguments');
   }

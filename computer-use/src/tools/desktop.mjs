@@ -1,3 +1,4 @@
+import {targeted} from './windows.mjs';
 // The Runtime supplies ctx.frames, ctx.macos, and a serialized input queue.
 // The macOS bridge exposes the functions in macos.swift.
 
@@ -14,6 +15,8 @@ async function resolvePoint({ frame_id, x, y }, ctx) {
     throw fail("coordinate_out_of_bounds");
   }
 
+  if(frame.kind==='browser')throw fail("target_required");
+  if(frame.target) throw fail("target_required");
   const layout = await ctx.macos.displayLayout();
   if (layout.version !== frame.layoutVersion) throw fail("stale_frame");
   const { left, top, width, height } = frame.desktopBounds;
@@ -26,8 +29,13 @@ async function resolvePoint({ frame_id, x, y }, ctx) {
 // end-snippet
 
 // snippet: screenshot
-export async function screenshot({ display_id }, ctx) {
+export async function screenshot({ display_id, target }, ctx) {
   ctx.require("screen");
+  if(target) {
+    const {png,width,height,desktopBounds,target:resolved}=await ctx.macos.captureWindow(target);
+    const frame_id=ctx.frames.add(ctx.sessionId,{width,height,desktopBounds,target:resolved});
+    return {result:{frame_id,target:resolved,width,height,captured_at:new Date().toISOString()},images:[{mime_type:'image/png',bytes:png}]};
+  }
   const layout = await ctx.macos.displayLayout();
   const display = display_id ?? layout.mainDisplayId;
   const { png, width, height, desktopBounds } = await ctx.macos.captureDisplay(display);
@@ -48,6 +56,7 @@ export async function screenshot({ display_id }, ctx) {
 
 // snippet: click
 export async function click(args, ctx) {
+  if(args.target || args.mode==='background')return targeted(args,ctx,'click');
   ctx.require("control");
   if (args.capture_after) ctx.require("screen");
   return ctx.inputQueue.run(async () => {
@@ -72,7 +81,9 @@ export async function click(args, ctx) {
 // end-snippet
 
 // snippet: type
-export async function type({ text }, ctx) {
+export async function type(args, ctx) {
+  const {text}=args;
+  if(args.target || args.mode==='background')return targeted(args,ctx,'type');
   ctx.require("control");
   if (typeof text !== "string" || text.length > 4096) throw fail("invalid_text");
   return ctx.inputQueue.run(async () => {
@@ -84,7 +95,9 @@ export async function type({ text }, ctx) {
 // end-snippet
 
 // snippet: press_key
-export async function pressKey({ key }, ctx) {
+export async function pressKey(args, ctx) {
+  const {key}=args;
+  if(args.target || args.mode==='background')return targeted(args,ctx,'press_key');
   ctx.require("control");
   return ctx.inputQueue.run(async () => {
     ctx.signal?.throwIfAborted();
@@ -96,6 +109,7 @@ export async function pressKey({ key }, ctx) {
 
 // snippet: scroll
 export async function scroll(args, ctx) {
+  if(args.target || args.mode==='background')return targeted(args,ctx,'scroll');
   ctx.require("control");
   return ctx.inputQueue.run(async () => {
     ctx.signal?.throwIfAborted();

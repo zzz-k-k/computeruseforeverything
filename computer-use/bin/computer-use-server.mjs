@@ -12,6 +12,7 @@ try {
     const { stateDir, tokenFile } = paths(options);
     const token = await ensureToken(tokenFile);
     runtime = await createRuntime({ stateDir, ffmpegPath: options.ffmpeg, ffprobePath: options.ffprobe });
+    await runtime.startBrowserBridge();
     const listen = options.listen === undefined ? undefined : new URL(`http://${options.listen}`);
     const service = await startServer({ runtime, token, port: Number(options.port ?? listen?.port ?? 8766), host: String(options.host || listen?.hostname?.replace(/^\[|\]$/g, '') || '127.0.0.1') });
     process.stdout.write(`computer-use listening at ${service.url}\nMCP endpoint: ${service.url}/mcp\nToken file: ${tokenFile}\n`);

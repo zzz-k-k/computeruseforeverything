@@ -1,0 +1,11 @@
+.DS_Store
+artifacts/
+output/
+computer-use-output/
+computer-use-docs/dist/
+node_modules/
+.state/
+.env
+.env.*
+!.env.example
+*.log

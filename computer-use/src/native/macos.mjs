@@ -48,6 +48,15 @@ export function createMacOS({ binaryPath = defaultBinary } = {}) {
     });
   }
   return {
+    listApps: () => invoke('apps'),
+    listWindows: () => invoke('windows'),
+    windowInfo: target => invoke('window_info', {target}),
+    appState: target => invoke('app_state', {target}),
+    targetAction: args => invoke('target_action', args),
+    async captureWindow(target) {
+      const {png, ...frame} = await invoke('window_capture', {target});
+      return {...frame, png: Buffer.from(png, 'base64')};
+    },
     displayLayout: () => invoke('layout'),
     permissions: () => invoke('permissions'),
     async captureDisplay(displayId) {

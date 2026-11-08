@@ -19,9 +19,17 @@ const state=async()=>JSON.parse(await readFile(root+'artifacts/desktop-fixture.j
 const wait=async(check)=>{for(let i=0;i<30;i++){const s=await state();if(check(s))return s;await delay(100);}throw Error('Fixture did not receive expected input: '+JSON.stringify(await state()));};
 const report={at:new Date().toISOString(),checks:[]};
 try {
- assert.equal((await client.listTools()).tools.length,7);
+ const names=tools=>tools.map(t=>t.name).sort();
+ const mcpNames=names((await client.listTools()).tools);
+ const expected=['browser_attach','browser_close','browser_detach','browser_navigate','browser_open','browser_state','browser_status','browser_tabs','capabilities','click','get_app_state','list_apps','list_windows','press_key','screenshot','scroll','see_now','set_value','type','video_frame'];
+ assert.deepEqual(mcpNames,expected);
+ assert.deepEqual(names((await cli('list')).tools),expected);
+ const catalog=await fetch('http://127.0.0.1:8766/v1/tools',{headers});
+ assert.equal(catalog.status,200);
+ assert.deepEqual(names((await catalog.json()).tools),expected);
+ report.checks.push({tool_catalog:'passed',count:expected.length,transports:['cli','http','mcp']});
  if (!process.argv.includes('--desktop')) {
-  report.checks.push({desktop:'previously verified in dedicated fixture; not rerun'});
+  report.checks.push({desktop:'not_run',reason:'Requires explicit --desktop and dedicated foreground fixture; no input injected in this run'});
  } else {
  const shot=await mcp('screenshot',{});assert.ok(shot.images.length===1);
  const initial=await state();
@@ -54,4 +62,8 @@ try {
  report.window=(await http('see_now',{action:'window'})).result;
  report.region=(await http('see_now',{action:'region',region:'off'})).result;
  report.status='passed';
-} catch(e){report.status='failed';report.error=e.message;throw e;}finally{await client.close();await writeFile(root+'artifacts/acceptance.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));}
+} catch(e){report.status='failed';report.error=e.message;throw e;}finally{
+ // Release only this script's observation session, including on assertion failure.
+ try {await http('see_now',{action:'stop'});} catch(e){report.cleanup_error=e.message;}
+ await client.close();await writeFile(root+'artifacts/acceptance.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
+}

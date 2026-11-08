@@ -1,0 +1,46 @@
+name: Publish documentation
+
+# Publishing is an explicit maintainer action after GitHub Desktop pushes source.
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build static documentation
+        run: node computer-use-docs/src/build.mjs
+      - name: Check output
+        run: test -f computer-use-docs/dist/index.html && test -f computer-use-docs/dist/assets/search.json
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload documentation only
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: computer-use-docs/dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy documentation
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,6 +1,16 @@
 import AppKit
 import Foundation
 
+final class FixtureApplication: NSApplication {
+    override func sendEvent(_ event: NSEvent) {
+        if let path=ProcessInfo.processInfo.environment["FIXTURE_EVENT_LOG"] {
+            let line="type=\(event.type.rawValue) subtype=\([NSEvent.EventType.appKitDefined, .systemDefined, .applicationDefined, NSEvent.EventType(rawValue:21)!].contains(event.type) ? event.subtype.rawValue : 0) window=\(event.windowNumber) point=\(event.locationInWindow) active=\(isActive) key=\(keyWindow?.windowNumber ?? 0) visible=\(event.window?.isVisible ?? false) mini=\(event.window?.isMiniaturized ?? false)\n"
+            if let handle=FileHandle(forWritingAtPath:path) { handle.seekToEndOfFile(); handle.write(Data(line.utf8)); try? handle.close() }
+        }
+        super.sendEvent(event)
+    }
+}
+
 // Isolated manual/integration-test target. Its JSON is written atomically after
 // every observed input event, so tests can verify delivery without inspecting
 // or modifying any existing application.
@@ -60,6 +70,8 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate
     var lastKey: [String: Any] = [:]
     var lastScroll: [String: Any] = [:]
     var sequence = 0
+    let background = CommandLine.arguments.contains("--background")
+    @objc func axClick() { leftClicks += 1; writeState() }
 
     init(stateURL: URL) { self.stateURL = stateURL }
 
@@ -74,7 +86,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate
         NSApp.mainMenu = menu
         window = NSWindow(contentRect: NSRect(x: 200, y: 150, width: 760, height: 540), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Computer Use — Isolated Input Test"
-        window.level = .floating
+        window.level = background ? .normal : .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.delegate = self
         window.isReleasedWhenClosed = false
@@ -83,6 +95,9 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate
         heading.font = .boldSystemFont(ofSize: 22)
         heading.frame = NSRect(x: 24, y: 486, width: 710, height: 30)
         content.addSubview(heading)
+        let axButton = NSButton(title: "AX test button", target: self, action: #selector(axClick))
+        axButton.frame = NSRect(x: 540, y: 480, width: 170, height: 34)
+        content.addSubview(axButton)
         let instructions = NSTextField(labelWithString: "Only this fixture is used for click, Unicode typing, keys, and scrolling.")
         instructions.frame = NSRect(x: 24, y: 450, width: 710, height: 24)
         content.addSubview(instructions)
@@ -133,15 +148,15 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate
         content.addSubview(scrollLabel)
 
         window.center()
-        window.makeKeyAndOrderFront(nil)
+        if !background { window.makeKeyAndOrderFront(nil) } else { window.orderBack(nil) }
         window.makeFirstResponder(editor)
-        NSApp.activate(ignoringOtherApps: true)
-        window.orderFrontRegardless()
+        if !self.background { NSApp.activate(ignoringOtherApps: true) }
+        if background { window.orderBack(nil) } else { window.orderFrontRegardless() }
         writeState()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            self.window.orderFrontRegardless()
-            self.window.makeKey()
-            NSApp.activate(ignoringOtherApps: true)
+            if self.background { self.window.orderBack(nil) } else { self.window.orderFrontRegardless() }
+            if !self.background { self.window.makeKey() }
+            if !self.background { NSApp.activate(ignoringOtherApps: true) }
             self.writeState()
         }
     }
@@ -173,7 +188,7 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate
             "scrollEvents": scrollEvents, "scrollY": scroll.contentView.bounds.origin.y,
             "lastScroll": lastScroll,
             "selection": ["location": editor.selectedRange().location, "length": editor.selectedRange().length],
-            "points": ["text": quartzPoint(editor, localPoint: NSPoint(x: 100, y: 35)), "button": quartzPoint(clickTarget), "scroll": quartzPoint(scroll)],
+            "points": ["text": quartzPoint(editor.enclosingScrollView!, localPoint: NSPoint(x: 100, y: 100)), "button": quartzPoint(clickTarget), "scroll": quartzPoint(scroll)],
             "coordinateSpace": "global Quartz points",
         ]
         do {
@@ -185,11 +200,11 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate
 
 @main struct FixtureMain {
     static func main() {
-        guard CommandLine.arguments.count == 2 else {
+        guard CommandLine.arguments.count >= 2 else {
             FileHandle.standardError.write(Data("Usage: DesktopFixture /absolute/path/to/state.json\n".utf8))
             exit(2)
         }
-        let application = NSApplication.shared
+        let application = FixtureApplication.shared
         let delegate = FixtureDelegate(stateURL: URL(fileURLWithPath: CommandLine.arguments[1]))
         application.delegate = delegate
         withExtendedLifetime(delegate) { application.run() }

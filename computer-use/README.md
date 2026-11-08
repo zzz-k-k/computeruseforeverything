@@ -1,78 +1,109 @@
-# Computer Use 本机运行版
+# Computer Use 本地运行时
 
-macOS 14+ / Apple Silicon。工具层复用固定版本 dsh-see-now 的真实采集、打分、选帧与拼图逻辑。提供 CLI、HTTP、Streamable HTTP MCP 和 stdio MCP。其他操作系统尚未实现桌面后端。
+[项目首页](../README.md) · [部署与排错](../docs/DEPLOYMENT.md) · [网页文档](https://zzz-k-k.github.io/computeruseforeverything/)
 
-## 启动
+从源码安装请先按项目首页准备 Node、Swift、FFmpeg 和依赖。本目录的 `bin` 启动器依赖同目录的 `src`、`vendor`、`node_modules` 和本机二进制，不能单独复制运行。
 
-当前目录已包含本机 Node、FFmpeg、FFprobe 和编译好的 Swift 桥接程序，无需修改 PATH。保留整个目录，两个启动入口不能单独移走。
+以下命令在 `computer-use` 目录执行。
+
+## CLI
 
 ```sh
-./bin/computer-use-server --listen 127.0.0.1:8766
 ./bin/computer-use list --json
-./bin/computer-use screenshot --out-dir ./artifacts --json
-./bin/computer-use see-now --action status --json
+./bin/computer-use screenshot --session demo --out-dir ./artifacts --json
+./bin/computer-use see-now --action status --session demo --json
 ```
 
-CLI 默认连接 127.0.0.1:8766，默认地址没有服务时尝试启动同目录服务。令牌保存在 `.state/token`，服务只监听回环地址。拥有令牌的本机客户端可以读取本机文件并操作桌面，请仅配置给授权客户端。session 是观察和帧的命名空间，不是不同用户之间的安全边界。默认 session 为 local，通过 `--session NAME` 或 HTTP 的 session_id 指定。
+默认连接 `http://127.0.0.1:8766`；没有默认服务时尝试启动。指定其他 `--url` 时需要先手动运行对应服务。安装目录可以通过绝对路径引用，无需修改系统 PATH。
 
-## MCP
+`--args` 接受完整 JSON 参数，适合嵌套的窗口/浏览器目标。`--out-dir` 指定图片目录，CLI 返回实际文件路径；没有 `--out` 选项。工具名中的连字符映射成下划线，例如 CLI 的 `browser-status` 对应 MCP/HTTP 的 `browser_status`。
 
-推荐 stdio 配置，无需在配置里复制令牌。该入口使用同一个本机服务。
+## MCP stdio
 
 ```json
 {
   "mcpServers": {
     "computer-use": {
-      "command": "/Users/huyuxi/shortcode/computeruseforeverything/computer-use/bin/computer-use",
-      "args": ["mcp"]
+      "command": "/absolute/path/computeruseforeverything/computer-use/bin/computer-use",
+      "args": ["mcp", "--session", "my-ai"]
     }
   }
 }
 ```
 
-HTTP MCP 地址为 `http://127.0.0.1:8766/mcp`，请求头使用 `Authorization: Bearer <.state/token 中的内容>`。可用 `x-computer-use-session` 设置观察会话。连接器需支持 Streamable HTTP 和自定义鉴权请求头。
+替换为真实绝对路径。stdio 入口通过本机 HTTP Runtime 转发请求，stdout 仅承载协议，无需把 token 填进配置。
 
-## HTTP
-
-`GET /health` 查询服务健康，`GET /v1/tools` 列出工具，`POST /v1/tools/{name}` 调用工具。后两者需要 Bearer token。请求体示例
-
-```json
-{"session_id":"local","arguments":{"action":"status"}}
-```
-
-返回 `{result,images:[{mime_type,data}]}`，data 是 Base64。CLI 将图片写入指定 out-dir 并返回文件路径。MCP 返回原生图像内容。
-
-## 常用工具
+## HTTP 与 MCP HTTP
 
 ```sh
-./bin/computer-use video-frame --path /absolute/video.mp4 --frame-index 10 --out-dir ./artifacts --json
-./bin/computer-use video-frame --path /absolute/video.mp4 --timestamp-ms 1200 --json
-./bin/computer-use see-now --action start --source file --path /absolute/video.mp4 --json
-./bin/computer-use see-now --action watch --seconds 8 --min-frames 1 --out-dir ./artifacts --json
-./bin/computer-use see-now --action peek --json
-./bin/computer-use see-now --action stop --json
-./bin/computer-use click --frame-id FRAME_ID --x 100 --y 100 --capture-after --json
-./bin/computer-use type --text '你好 Computer Use' --json
-./bin/computer-use press-key --key Meta+A --json
-./bin/computer-use scroll --frame-id FRAME_ID --x 600 --y 500 --delta-y 300 --json
+./bin/computer-use-server --listen 127.0.0.1:8766
 ```
 
-截图 frame_id 绑定 session，60 秒过期，最多保留 256 帧引用。点击和滚动使用截图像素坐标，后端转换为桌面全局坐标。布局变化需要重新截图。输入已派发不等于目标应用已完成操作，使用后续截图确认。`capture_after` 失败时仍保留 executed。
+| 接口 | 用途 | 鉴权 |
+| --- | --- | --- |
+| `GET /health` | 健康状态 | 不需要 token |
+| `GET /v1/tools` | 工具目录 | Bearer token |
+| `POST /v1/tools/{name}` | 调用工具 | Bearer token |
+| `/mcp` | MCP Streamable HTTP | Bearer token |
 
-see_now 支持 start/watch/peek/stop/status/window/region。stop 后需要 start。window 管理可选窗口的状态，默认不自动开启悬浮窗或音频。region 框选需要本机 Python Tk，缺少时返回明确原因。当前 Mac 不提供 Windows WASAPI 音频转写。摄像头与 OBS 需要对应设备，可用性依赖本机配置。精确视频取帧扫描时间轴并从头解码，大文件会比较慢。
-
-macOS 录屏和辅助功能授权属于系统设置。缺少权限会返回明确错误，不把空白截图或未派发输入当成成功。
-
-## 开发与验证
+令牌文件为 `.state/token`。将它配置到可信客户端的 `Authorization: Bearer …` 请求头中，不写入仓库或公开示例。可用下列 Node 示例读取令牌并查询状态，无需打印令牌：
 
 ```sh
-npm ci
-npm run build
+./bin/node --input-type=module <<'JS'
+import { readFile } from 'node:fs/promises';
+const token = (await readFile('.state/token', 'utf8')).trim();
+const response = await fetch('http://127.0.0.1:8766/v1/tools/browser_status', {
+  method: 'POST',
+  headers: {
+    authorization: `Bearer ${token}`,
+    'content-type': 'application/json'
+  },
+  body: JSON.stringify({ session_id: 'my-ai', arguments: {} })
+});
+console.log(response.status, await response.json());
+JS
+```
+
+HTTP 返回 `{result, images:[{mime_type,data}]}`，图片 data 为 Base64。MCP 返回文本内容块和图像内容块。MCP HTTP 用 `x-computer-use-session` 指定 session。
+
+所有入口使用同一个服务令牌；session 隔离截图、观察状态和标签归属，不是身份认证或独立用户权限。
+
+## 20 个工具
+
+| 分组 | 工具 |
+| --- | --- |
+| 发现和控件 | `list_apps`、`list_windows`、`get_app_state`、`capabilities`、`set_value` |
+| 画面和输入 | `screenshot`、`click`、`type`、`press_key`、`scroll` |
+| 视频观察 | `see_now`、`video_frame` |
+| Chrome | `browser_status`、`browser_tabs`、`browser_open`、`browser_attach`、`browser_navigate`、`browser_state`、`browser_detach`、`browser_close` |
+
+`see_now` 通过 action 区分 start/watch/peek/stop/status/window/region；没有另外的顶层 watch 工具。`video_frame` 的 timestamp_ms 和 frame_index 必须且只能提供一个。
+
+```sh
+./bin/computer-use video-frame --path /absolute/video.mp4 --frame-index 10 --json
+./bin/computer-use see-now --action start --source file --path /absolute/video.mp4 --session video --json
+./bin/computer-use see-now --action watch --seconds 5 --session video --json
+./bin/computer-use see-now --action stop --session video --json
+```
+
+## 三种目标
+
+- 未传 target：桌面截图和系统键鼠操作，会作用于实际桌面。
+- `target: {pid, window_id}`：指定原生窗口；带 target 默认 background，兼容性取决于应用。
+- `target: {kind:"browser", connection_id, tab_id}`：已附加的 Chrome 标签，使用扩展内部 CDP。
+
+截图引用绑定 session，60 秒过期，最多保留 256 帧。点击/滚动使用截图像素坐标；不同目标的帧不能混用。
+
+原生后台滚动暂不支持；Chrome 页面滚动已实现。Chrome 支持普通页面按键，不接受 Meta+T 等浏览器快捷键，应使用 browser_open 等工具。原生输入中止保护不能保证应用不主动抢焦点，Chrome 扩展的本机通过结果不能推广到原生软件。
+
+## 检查和验收
+
+```sh
 npm test
+npm run check:local
+npm run acceptance
+npm run acceptance:browser
+npm run acceptance:browser-transports
 ```
 
-build 复制当前 Node 并编译 Swift。FFmpeg/FFprobe 已置于 bin，也可在服务配置中指定兼容可执行文件。源码、来源与许可说明见 vendor。不要把 `.state/token`、屏幕图片或本机二进制误提交到源码仓库。
-
-运行 `node scripts/acceptance.mjs` 可以复验真实 MCP/HTTP/CLI 与视频和屏幕采集。桌面注入测试需要专门窗口和 FocusGuard，并显式传入 `--desktop`，前台不是测试进程时会拒绝发送输入。
-
-自动测试涵盖实际 FFmpeg 解码/拼图、真实 MCP SDK 客户端与 HTTP/CLI 连接、native bridge 编译后的协议与权限检查。桌面键鼠实测记录位于 artifacts/acceptance.json，使用专门测试窗口，未操作用户业务应用。
+后面三项需要本地服务；浏览器验收还要求本项目扩展已连接且 Chrome 处于后台。原生桌面注入测试必须使用专用测试窗口，默认 acceptance 不注入键鼠。测试输出在 artifacts 中，不提交到源码仓库。

@@ -9,7 +9,7 @@ export async function buildNative() {
   const root = fileURLToPath(new URL('../', import.meta.url));
   const binary = resolve(root, 'bin/desktop-bridge');
   await mkdir(resolve(root, 'bin'), { recursive: true });
-  await promisify(execFile)('xcrun', ['swiftc', '-parse-as-library', '-O', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macosx14.0`, resolve(root, 'src/native/macos.swift'), '-o', binary], { maxBuffer: 4 * 1024 * 1024 });
+  await promisify(execFile)('xcrun', ['swiftc', '-parse-as-library', '-O', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macosx14.0`, resolve(root, 'src/native/macos.swift'), resolve(root, 'src/native/window-control.swift'), resolve(root, 'src/native/background-input.swift'), '-o', binary], { maxBuffer: 4 * 1024 * 1024 });
   return binary;
 }
 
